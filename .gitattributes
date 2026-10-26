@@ -1,2 +1,3 @@
 *.cmd -text
 *.ps1 -text
+docs/ export-ignore

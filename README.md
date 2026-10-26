@@ -1,5 +1,7 @@
 # bl4-slim
 
+![Disk Space Saver: 189 GB before, 57 GB after, 70% smaller](docs/header.png)
+
 Shrinks a Borderlands 4 install on Windows.
 
 ## What it removes
