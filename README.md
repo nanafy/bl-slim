@@ -4,10 +4,10 @@ Shrinks a Borderlands 4 install on Windows. Mine went from 189 GB to 57 GB, and 
 
 ## What it removes
 
-1. **Voice languages you don't use.** Steam installs the voices for all 8 languages, about 8 to 9.5 GB each, and has no option to skip them. The script keeps the one you pick and deletes the rest.
-2. **Old patch data.** Every update adds new pak files and leaves the older ones in place, so the install keeps old copies of data that a newer patch replaced. The game only reads the newest copy. The old copies share files with data the game still needs, so you can't just delete files. The script blanks only the dead byte ranges (NTFS sparse files). File sizes stay the same and the space comes back.
+1. **Voice languages you don't use.** Steam installs the voices for all 8 languages, about 8 to 9.5 GB each. There's no option to skip them. The script keeps the one you pick and deletes the rest.
+2. **Old patch data.** Every update adds new pak files and leaves the old ones in place. The game only reads the newest copy. The old copies share files with data the game still needs, so you can't just delete files. The script blanks only the dead byte ranges (NTFS sparse files). File sizes stay the same and the space comes back.
 
-It works out what's old by reading the game's own file indexes, so it doesn't depend on file numbers and keeps working after updates. If an update changes the file format, it stops with an error instead of guessing. Before and after blanking each file, it hashes every byte the game still reads, and it stops if a single one changed.
+It reads the game's own file indexes to work out what's old, so it keeps working after updates. If an update changes the file format, it stops with an error. It doesn't guess. It hashes every byte the game still reads, before and after blanking each file, and stops if one changed.
 
 ## How to use
 
