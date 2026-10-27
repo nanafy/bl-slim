@@ -226,8 +226,9 @@ try {
     $GameDir = (Resolve-Path -LiteralPath $GameDir).ProviderPath.TrimEnd('\'); Write-Host "Borderlands 4: $GameDir"
     if (-not $Scan) {
         if (Get-Process Borderlands4 -ErrorAction SilentlyContinue) { Write-Host 'Borderlands 4 is running. Close it first.'; exit 1 }
-        $acf = Join-Path (Split-Path (Split-Path $GameDir)) 'appmanifest_1285190.acf'
-        if ((Test-Path -LiteralPath $acf) -and (Get-Content -LiteralPath $acf -Raw) -notmatch '"StateFlags"\s+"4"') { Write-Host 'Steam is updating or checking the game. Let it finish first.'; exit 1 }
+        $sa = [IO.Path]::GetDirectoryName($GameDir); if ($sa) { $sa = [IO.Path]::GetDirectoryName($sa) }
+        $acf = if ($sa) { Join-Path $sa 'appmanifest_1285190.acf' }
+        if ($acf -and (Test-Path -LiteralPath $acf) -and (Get-Content -LiteralPath $acf -Raw) -notmatch '"StateFlags"\s+"4"') { Write-Host 'Steam is updating or checking the game. Let it finish first.'; exit 1 }
     }
     $s = New-Object Bl4Slim (Join-Path $GameDir 'OakGame\Content\Paks'); $langs = @($s.Voices.Values | Sort-Object -Unique)
     $Keep = @($Keep -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
