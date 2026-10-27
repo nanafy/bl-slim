@@ -16,7 +16,7 @@ It reads the game's own file indexes to work out what to do, so it keeps working
 
 1. Close the game and let Steam finish any update.
 2. Download the zip, unzip it anywhere, and double-click `bl4-slim.cmd`.
-3. Pick the voice language to keep. Use the one your game's voice setting is on. Enter keeps English.
+3. Pick the voice languages to keep. Use the ones your game's voice settings are on. Type more than one number to keep several, like `1,3`. Enter keeps English.
 4. It shows what it will remove. Type `y` to go ahead.
 
 Run it again after every game update, updates unfortunately bring the old copies back.
@@ -31,6 +31,7 @@ From a command prompt in the unzipped folder:
 |---|---|
 | `bl4-slim.cmd -Scan` | shows what it would remove and doesn't touch the game files |
 | `bl4-slim.cmd -Keep German` | keeps German without asking |
+| `bl4-slim.cmd -Keep "German,English(US)"` | keeps both |
 | `bl4-slim.cmd -GameDir "D:\Games\Borderlands 4"` | uses that game folder |
 | `bl4-slim.cmd -Yes` | skips the "Go ahead?" question |
 

@@ -1,4 +1,5 @@
-param([string]$GameDir, [string]$Keep, [switch]$Scan, [switch]$Yes)
+param([string]$GameDir, [string[]]$Keep, [switch]$Scan, [switch]$Yes)
+if ($args) { Write-Host 'Unknown argument. Put several languages in one quoted list: -Keep "German,English(US)"'; exit 2 }
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System; using System.Collections.Generic; using System.ComponentModel; using System.IO; using System.Linq; using System.Text;
@@ -22,9 +23,10 @@ public class Bl4Slim {
         chunks = found.GroupBy(x => int.Parse(x.m.Groups[1].Value)).ToDictionary(g => g.Key, g => g.Select(x => x.f).ToList());
         foreach (var kv in chunks) { var lang = ChunkLanguage(kv.Value); if (lang != null) Voices[kv.Key] = lang; }
     }
-    public void Prepare(string keep) {
-        if (Voices.Count > 0 && !Voices.ContainsValue(keep)) throw new Exception("No " + keep + " voice pack is installed. Found: " + string.Join(", ", Voices.Values.Distinct()));
-        foreach (var kv in Voices.Where(v => v.Value != keep))
+    public void Prepare(string[] keep) {
+        var miss = keep.FirstOrDefault(k => !Voices.ContainsValue(k));
+        if (Voices.Count > 0 && miss != null) throw new Exception("No " + miss + " voice pack is installed. Found: " + string.Join(", ", Voices.Values.Distinct()));
+        foreach (var kv in Voices.Where(v => !keep.Contains(v.Value)))
             foreach (var f in chunks[kv.Key].OrderBy(f => f.EndsWith(".pak")).ThenBy(f => f)) {
                 Foreign.Add(f); long n; Drop.TryGetValue(kv.Value, out n); Drop[kv.Value] = n + new FileInfo(f).Length;
             }
@@ -228,17 +230,18 @@ try {
         if ((Test-Path -LiteralPath $acf) -and (Get-Content -LiteralPath $acf -Raw) -notmatch '"StateFlags"\s+"4"') { Write-Host 'Steam is updating or checking the game. Let it finish first.'; exit 1 }
     }
     $s = New-Object Bl4Slim (Join-Path $GameDir 'OakGame\Content\Paks'); $langs = @($s.Voices.Values | Sort-Object -Unique)
+    $Keep = @($Keep -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if (-not $Keep -and $langs.Count -gt 1) {
         Write-Host 'Voice languages installed:'; 1..$langs.Count | ForEach-Object { Write-Host ('  {0}. {1}' -f $_, $langs[$_ - 1]) }
-        $a = (Read-Host 'Number of the one to keep (Enter = English(US))').Trim()
-        $Keep = if ($a -match '^\d+$' -and [int]$a -ge 1 -and [int]$a -le $langs.Count) { $langs[[int]$a - 1] } elseif ($a) { $a } else { 'English(US)' }
+        $a = (Read-Host 'Numbers of the ones to keep, like 1,3 (Enter = English(US))').Trim()
+        $Keep = if ($a) { @($a -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { if ($_ -match '^\d+$' -and [int]$_ -ge 1 -and [int]$_ -le $langs.Count) { $langs[[int]$_ - 1] } else { $_ } }) } else { @('English(US)') }
     }
-    if (-not $Keep) { $Keep = if ($langs.Count -eq 1) { $langs[0] } else { 'English(US)' } }
-    $Keep = @($langs | Where-Object { $_ -eq $Keep }) + $Keep | Select-Object -First 1
-    Write-Host 'Reading the game files...'; $s.Prepare($Keep); $before = [Bl4Slim]::OnDisk($GameDir)
+    if (-not $Keep) { $Keep = @(if ($langs.Count -eq 1) { $langs[0] } else { 'English(US)' }) }
+    $Keep = @($Keep | ForEach-Object { $k = $_; @($langs | Where-Object { $_ -eq $k }) + $k | Select-Object -First 1 } | Select-Object -Unique)
+    Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Bl4Slim]::OnDisk($GameDir)
     '', ('Game on disk now:        {0}' -f (Size $before)) | Write-Host
     foreach ($d in $s.Drop.GetEnumerator()) { Write-Host ('  {0,-21} {1}' -f $d.Key, (Size $d.Value)) }
-    Write-Host ('Voice languages to drop: {0}   (keeping {1})' -f (Size $s.ForeignBytes), $Keep)
+    Write-Host ('Voice languages to drop: {0}   (keeping {1})' -f (Size $s.ForeignBytes), ($Keep -join ', '))
     Write-Host ('Old patch copies:        {0}   in {1} files' -f (Size $s.Saves), $s.Todo.Count)
     if ($s.Unit -eq 0) { Write-Host 'Old patch copies stay: this drive cannot free part of a file. That needs NTFS and a few MB free.' }
     if ($s.Foreign.Count -eq 0 -and $s.Todo.Count -eq 0) { Write-Host 'Nothing to do.'; exit 0 }; if ($Scan) { exit 0 }
