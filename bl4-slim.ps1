@@ -1,5 +1,5 @@
 param([string]$GameDir, [string[]]$Keep, [switch]$Scan, [switch]$Yes)
-if ($args) { Write-Host 'Unknown argument. Put several languages in one quoted list: -Keep "German,English(US)"'; exit 2 }
+if ($args) { Write-Host 'Unknown argument. Options are -Scan -Keep -GameDir -Yes. Put several languages in one quoted list: -Keep "German,English(US)"'; exit 2 }
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System; using System.Collections.Generic; using System.ComponentModel; using System.IO; using System.Linq; using System.Text;
