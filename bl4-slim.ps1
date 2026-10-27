@@ -253,6 +253,7 @@ try {
 } catch {
     $e = $_.Exception.GetBaseException()
     if ($e -is [UnauthorizedAccessException]) { Write-Host 'Windows blocked access to a game file. Right-click bl4-slim.cmd and pick "Run as administrator".' }
+    elseif ($e -is [IO.PathTooLongException] -or ($e -is [ComponentModel.Win32Exception] -and $e.NativeErrorCode -eq 206)) { Write-Host 'A game file path is longer than Windows allows (260 characters). Move the game library closer to the drive root, or turn on long paths in Windows.' }
     else { Write-Host "Stopped: $($e.Message)" }
     exit 1
 }

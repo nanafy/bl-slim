@@ -29,7 +29,7 @@ From a command prompt in the unzipped folder:
 
 | Command | What it does |
 |---|---|
-| `bl4-slim.cmd -Scan` | shows what it would remove and doesn't touch the game files |
+| `bl4-slim.cmd -Scan` | shows what it would remove. Your game files stay as they are, but it makes and deletes one 8 MB test file in the Paks folder |
 | `bl4-slim.cmd -Keep German` | keeps German without asking |
 | `bl4-slim.cmd -Keep "German,English(US)"` | keeps both |
 | `bl4-slim.cmd -GameDir "D:\Games\Borderlands 4"` | uses that game folder |
