@@ -212,17 +212,17 @@ public class Bl4Slim {
 function Size($n) { if ($n -ge 1GB -or $n -eq 0) { '{0,8:N2} GB' -f ($n / 1GB) } else { '{0,8:N2} MB' -f ($n / 1MB) } }
 function Find-Game {
     if (-not ($steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath)) { return }
-    $libs = @($steam); $vdf = Join-Path $steam 'steamapps\libraryfolders.vdf'
+    $libs = @($steam); $vdf = [IO.Path]::Combine($steam, 'steamapps\libraryfolders.vdf')
     if (Test-Path -LiteralPath $vdf) { $libs += Select-String -LiteralPath $vdf -Pattern '"path"\s+"(.+?)"' | ForEach-Object { $_.Matches[0].Groups[1].Value -replace '\\\\', '\' } }
     foreach ($lib in $libs) {
-        $acf = Join-Path $lib 'steamapps\appmanifest_1285190.acf'
+        $acf = [IO.Path]::Combine($lib, 'steamapps\appmanifest_1285190.acf')
         $m = if (Test-Path -LiteralPath $acf) { Select-String -LiteralPath $acf -Pattern '"installdir"\s+"(.+?)"' | Select-Object -First 1 }
-        if ($m) { return Join-Path $lib ('steamapps\common\' + $m.Matches[0].Groups[1].Value) }
+        if ($m) { return [IO.Path]::Combine($lib, 'steamapps\common\' + $m.Matches[0].Groups[1].Value) }
     }
 }
 try {
     if (-not $GameDir -and -not ($GameDir = Find-Game)) { $GameDir = Read-Host 'Paste your Borderlands 4 folder' }
-    if (-not ($GameDir = $GameDir.Trim().Trim('"')) -or -not (Test-Path -LiteralPath (Join-Path $GameDir 'OakGame\Content\Paks'))) { Write-Host "No Borderlands 4 found at $GameDir"; exit 2 }
+    if (-not ($GameDir = $GameDir.Trim().Trim('"')) -or -not (Test-Path -LiteralPath ([IO.Path]::Combine($GameDir, 'OakGame\Content\Paks')))) { Write-Host "No Borderlands 4 found at $GameDir"; exit 2 }
     $GameDir = (Resolve-Path -LiteralPath $GameDir).ProviderPath.TrimEnd('\'); Write-Host "Borderlands 4: $GameDir"
     if (-not $Scan) {
         if (Get-Process Borderlands4 -ErrorAction SilentlyContinue) { Write-Host 'Borderlands 4 is running. Close it first.'; exit 1 }
