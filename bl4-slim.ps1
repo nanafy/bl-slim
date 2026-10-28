@@ -12,13 +12,14 @@ public class Bl4Slim {
     static readonly Regex ChunkFile = new Regex(@"^pakchunk(\d+)-Windows_(\d+)_P\.(pak|ucas|utoc)$");
     class Toc { public string[] Ids; public bool[] Header; public long[] SpanOff, SpanLen, BlockOff, BlockSize; public long BlockSz; }
     class Pak { public string Mount; public Dictionary<string, long> Entries = new Dictionary<string, long>(); public long DataEnd; }
-    public string Paks; public long Unit, Saves; public List<string> Foreign = new List<string>();
+    public string Paks; public long Unit, Saves; public List<string> Foreign = new List<string>(), Skipped;
     public SortedDictionary<int, string> Voices = new SortedDictionary<int, string>();
     public SortedDictionary<string, long> Drop = new SortedDictionary<string, long>(); public long ForeignBytes { get { return Drop.Values.Sum(); } }
     public Dictionary<string, List<long[]>> Old = new Dictionary<string, List<long[]>>(StringComparer.OrdinalIgnoreCase), Todo = new Dictionary<string, List<long[]>>(StringComparer.OrdinalIgnoreCase);
     Dictionary<string, int> patch = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); Dictionary<int, List<string>> chunks;
     public Bl4Slim(string paks) {
         var found = Directory.GetFiles(Paks = paks).Select(f => new { f, m = ChunkFile.Match(Path.GetFileName(f)) }).Where(x => x.m.Success).ToList();
+        Func<string, bool> ok = f => { try { if (f.EndsWith(".utoc")) ReadToc(f); else if (f.EndsWith(".pak")) ReadPak(f); return true; } catch (Exception e) { if (e is IOException || e is UnauthorizedAccessException) throw; return false; } }; var bad = new HashSet<string>(found.Where(x => !ok(x.f)).Select(x => x.f), StringComparer.OrdinalIgnoreCase); bad.UnionWith(bad.Where(f => f.EndsWith(".utoc")).Select(f => Path.ChangeExtension(f, ".ucas")).ToList()); Skipped = found.Where(x => bad.Contains(x.f)).Select(x => Path.GetFileName(x.f)).OrderBy(n => n).ToList(); found = found.Where(x => !bad.Contains(x.f)).ToList();
         foreach (var x in found) patch[x.f] = int.Parse(x.m.Groups[2].Value);
         chunks = found.GroupBy(x => int.Parse(x.m.Groups[1].Value)).ToDictionary(g => g.Key, g => g.Select(x => x.f).ToList());
         foreach (var kv in chunks) { var lang = ChunkLanguage(kv.Value); if (lang != null) Voices[kv.Key] = lang; }
@@ -154,7 +155,7 @@ public class Bl4Slim {
             return pak;
         }
     }
-    static Exception Bad(string path, string msg) { return new Exception(Path.GetFileName(path) + ": " + msg); }
+    static Exception Bad(string path, string msg) { return new InvalidDataException(Path.GetFileName(path) + ": " + msg); }
     static uint U32(byte[] d, long o) { return BitConverter.ToUInt32(d, (int)o); }
     static long I64(byte[] d, long o) { return BitConverter.ToInt64(d, (int)o); }
     static int Next(byte[] b, ref int p) { p += 4; return BitConverter.ToInt32(b, p - 4); }
@@ -239,7 +240,7 @@ try {
     }
     if (-not $Keep) { $Keep = @(if ($langs.Count -eq 1) { $langs[0] } else { 'English(US)' }) }
     $Keep = @($Keep | ForEach-Object { $k = $_; @($langs | Where-Object { $_ -eq $k }) + $k | Select-Object -First 1 } | Select-Object -Unique)
-    Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Bl4Slim]::OnDisk($GameDir)
+    Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Bl4Slim]::OnDisk($GameDir); if ($s.Skipped.Count) { Write-Host ('Ignoring {0} file(s) this tool does not understand: {1}' -f $s.Skipped.Count, ($s.Skipped -join ', ')) }
     '', ('Game on disk now:        {0}' -f (Size $before)) | Write-Host
     foreach ($d in $s.Drop.GetEnumerator()) { Write-Host ('  {0,-21} {1}' -f $d.Key, (Size $d.Value)) }
     Write-Host ('Voice languages to drop: {0}   (keeping {1})' -f (Size $s.ForeignBytes), ($Keep -join ', '))
