@@ -6,7 +6,7 @@ Shrinks a Borderlands 4 install on Windows.
 
 ## What it removes
 
-1. **Voice languages you don't use.** Steam installs the voices for all 8 languages, each is ~9gb. Keep only the one you use.
+1. **Voice languages you don't use.** Steam installs the voices for all 8 languages, each is ~9gb. Keep the ones you use. English is always kept\*, we think the game needs it.
 2. **Old patch data.** Every update adds new pak files and the old ones take up space. The game only reads the newest copy. The old copies share files with data the game still needs. 
 The script blanks only the dead byte ranges (NTFS sparse files).
 
@@ -30,7 +30,7 @@ From a command prompt in the unzipped folder:
 | Command | What it does |
 |---|---|
 | `bl4-slim.cmd -Scan` | shows what it would remove. Your game files stay as they are, but it makes and deletes one 8 MB test file in the Paks folder |
-| `bl4-slim.cmd -Keep German` | keeps German without asking |
+| `bl4-slim.cmd -Keep German` | keeps German without asking (English is kept too\*) |
 | `bl4-slim.cmd -Keep "German,English(US)"` | keeps both |
 | `bl4-slim.cmd -GameDir "D:\Games\Borderlands 4"` | uses that game folder |
 | `bl4-slim.cmd -Yes` | skips the "Go ahead?" question |
@@ -38,6 +38,12 @@ From a command prompt in the unzipped folder:
 ## Undo
 
 In Steam, open Properties, then run "Verify integrity of game files". Steam grabs all the files again.
+
+## \*Why English is always kept
+
+One user kept only the Korean voices and deleted English. The first mission then showed a "required content" pop-up. With English back it worked. We think the game needs the English voice files, but this is one report and not proven.
+
+Thanks to SolTeLu on Nexus Mods for finding it.
 
 ## Tested
 
