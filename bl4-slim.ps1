@@ -235,11 +235,12 @@ try {
     $Keep = @($Keep -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if (-not $Keep -and $langs.Count -gt 1) {
         Write-Host 'Voice languages installed:'; 1..$langs.Count | ForEach-Object { Write-Host ('  {0}. {1}' -f $_, $langs[$_ - 1]) }
-        $a = (Read-Host 'Numbers of the ones to keep, like 1,3 (Enter = English(US))').Trim()
+        $a = (Read-Host 'Numbers of the ones to keep, like 1,3 (English(US) is always kept, Enter = only English)').Trim()
         $Keep = if ($a) { @($a -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { if ($_ -match '^\d+$' -and [int]$_ -ge 1 -and [int]$_ -le $langs.Count) { $langs[[int]$_ - 1] } else { $_ } }) } else { @('English(US)') }
     }
     if (-not $Keep) { $Keep = @(if ($langs.Count -eq 1) { $langs[0] } else { 'English(US)' }) }
     $Keep = @($Keep | ForEach-Object { $k = $_; @($langs | Where-Object { $_ -eq $k }) + $k | Select-Object -First 1 } | Select-Object -Unique)
+    if ($langs -contains 'English(US)' -and $Keep -notcontains 'English(US)') { $Keep = @('English(US)') + $Keep; Write-Host 'Keeping English(US) too. The game needs the English voice files even if you play in another language.' } elseif ($langs.Count -gt 0 -and $langs -notcontains 'English(US)') { Write-Host 'The English(US) voice files are missing and the game needs them. Run "Verify integrity of game files" in Steam, then run this again.'; $Keep = @($Keep | Where-Object { $langs -contains $_ }); if (-not $Keep) { $Keep = @($langs) } }
     Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Bl4Slim]::OnDisk($GameDir); if ($s.Skipped.Count) { Write-Host ('Ignoring {0} file(s) this tool does not understand: {1}' -f $s.Skipped.Count, ($s.Skipped -join ', ')) }
     '', ('Game on disk now:        {0}' -f (Size $before)) | Write-Host
     foreach ($d in $s.Drop.GetEnumerator()) { Write-Host ('  {0,-21} {1}' -f $d.Key, (Size $d.Value)) }
