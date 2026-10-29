@@ -41,7 +41,7 @@ In Steam, open Properties, then run "Verify integrity of game files". Steam grab
 
 ## \*Why English is always kept
 
-One user kept only the Korean voices and deleted English. The first mission then showed a "required content" pop-up. With English back it worked. We think the game needs the English voice files, but this is one report and not proven.
+One user kept only the Korean voices and deleted English. The first mission then showed a "required content" pop-up. With English back it worked. We think the game needs the English voice files, but this needs more digging.
 
 Thanks to SolTeLu on Nexus Mods for finding it.
 
