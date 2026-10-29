@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System; using System.Collections.Generic; using System.ComponentModel; using System.IO; using System.Linq; using System.Text;
 using System.Runtime.InteropServices; using System.Security.Cryptography; using System.Text.RegularExpressions; using Microsoft.Win32.SafeHandles;
-public class Bl4Slim {
+public class Slim {
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool DeviceIoControl(SafeFileHandle h, uint code, byte[] inBuf, int inSize, byte[] outBuf, int outSize, out int got, IntPtr ov);
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern uint GetCompressedFileSizeW(string path, out uint high);
     const uint SetSparse = 0x900C4, SetZeroData = 0x980C8, QueryAllocatedRanges = 0x940CF;
@@ -18,7 +18,7 @@ public class Bl4Slim {
     public SortedDictionary<string, long> Drop = new SortedDictionary<string, long>(); public long ForeignBytes { get { return Drop.Values.Sum(); } }
     public Dictionary<string, List<long[]>> Old = new Dictionary<string, List<long[]>>(StringComparer.OrdinalIgnoreCase), Todo = new Dictionary<string, List<long[]>>(StringComparer.OrdinalIgnoreCase);
     Dictionary<string, int> patch = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); Dictionary<int, List<string>> chunks;
-    public Bl4Slim(string paks, string exe) {
+    public Slim(string paks, string exe) {
         if (v3 = !string.IsNullOrEmpty(exe)) key = FindKey(paks, exe);
         var found = Directory.GetFiles(Paks = paks).Select(f => new { f, m = (v3 ? ChunkFile3 : ChunkFile).Match(Path.GetFileName(f)) }).Where(x => x.m.Success).ToList();
         Func<string, bool> ok = f => { try { if (f.EndsWith(".utoc")) ReadToc(f); else if (f.EndsWith(".pak")) ReadPak(f); return true; } catch (Exception e) { if (e is IOException || e is UnauthorizedAccessException) throw; return false; } }; var bad = new HashSet<string>(found.Where(x => !ok(x.f)).Select(x => x.f), StringComparer.OrdinalIgnoreCase); bad.UnionWith(bad.Where(f => f.EndsWith(".utoc")).Select(f => Path.ChangeExtension(f, ".ucas")).ToList()); Skipped = found.Where(x => bad.Contains(x.f)).Select(x => Path.GetFileName(x.f)).OrderBy(n => n).ToList(); found = found.Where(x => !bad.Contains(x.f)).ToList();
@@ -231,7 +231,7 @@ public class Bl4Slim {
         return o;
     }
     static long ProbeUnit(string dir) {
-        var f = Path.Combine(dir, "bl4-slim-probe.tmp"); const int n = 8 << 20;
+        var f = Path.Combine(dir, "bl-slim-probe.tmp"); const int n = 8 << 20;
         try {
             File.WriteAllBytes(f, Enumerable.Repeat((byte)1, n).ToArray()); Zero(f, new[] { new long[] { 1, n - 1 } });
             var a = Allocated(f); return a.Count == 2 && a[0][0] == 0 && a[1][1] == n && a[0][1] == n - a[1][0] ? a[0][1] : 0;
@@ -267,7 +267,7 @@ function Find-Game($app) {
     }
 }
 function Show-Error($e) {
-    if ($e -is [UnauthorizedAccessException]) { Write-Host 'Windows blocked access to a game file. Right-click bl4-slim.cmd and pick "Run as administrator".' }
+    if ($e -is [UnauthorizedAccessException]) { Write-Host 'Windows blocked access to a game file. Right-click bl-slim.cmd and pick "Run as administrator".' }
     elseif ($e -is [IO.PathTooLongException] -or ($e -is [ComponentModel.Win32Exception] -and $e.NativeErrorCode -eq 206)) { Write-Host 'A game file path is longer than Windows allows (260 characters). Move the game library closer to the drive root, or turn on long paths in Windows.' }
     else { Write-Host "Stopped: $($e.Message)" }
 }
@@ -284,7 +284,7 @@ function Invoke-Slim($g, $dir) {
     }
     $exe = if ($g.Exe) { Join-Path $dir $g.Exe }
     if ($exe -and -not (Test-Path -LiteralPath $exe)) { Write-Host ('{0} needs {1} to read its key, and it is not there.' -f $g.Name, $g.Exe); $script:rc = [Math]::Max($script:rc, 2); return }
-    $s = New-Object Bl4Slim -ArgumentList $paks, $exe; $langs = @($s.Voices.Values | Sort-Object -Unique)
+    $s = New-Object Slim -ArgumentList $paks, $exe; $langs = @($s.Voices.Values | Sort-Object -Unique)
     $Keep = @($Keep -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if (-not $Keep -and $langs.Count -gt 1) {
         Write-Host 'Voice languages installed:'; 1..$langs.Count | ForEach-Object { Write-Host ('  {0}. {1}' -f $_, $langs[$_ - 1]) }
@@ -294,7 +294,7 @@ function Invoke-Slim($g, $dir) {
     if (-not $Keep) { $Keep = @(if ($langs.Count -eq 1) { $langs[0] } else { 'English(US)' }) }
     $Keep = @($Keep | ForEach-Object { $k = $_; @($langs | Where-Object { $_ -eq $k }) + $k | Select-Object -First 1 } | Select-Object -Unique)
     if ($langs -contains 'English(US)' -and $Keep -notcontains 'English(US)') { $Keep = @('English(US)') + $Keep; Write-Host 'Keeping English(US) too. The game seems to need the English voice files even if you play in another language.' } elseif ($langs.Count -gt 0 -and $langs -notcontains 'English(US)') { Write-Host 'The English(US) voice files are missing and the game seems to need them. Run "Verify integrity of game files" in Steam, then run this again.'; $Keep = @($Keep | Where-Object { $langs -contains $_ }); if (-not $Keep) { $Keep = @($langs) } }
-    Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Bl4Slim]::OnDisk($dir); if ($s.Skipped.Count) { Write-Host ('Ignoring {0} file(s) this tool does not understand: {1}' -f $s.Skipped.Count, ($s.Skipped -join ', ')) }
+    Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Slim]::OnDisk($dir); if ($s.Skipped.Count) { Write-Host ('Ignoring {0} file(s) this tool does not understand: {1}' -f $s.Skipped.Count, ($s.Skipped -join ', ')) }
     '', ('Game on disk now:        {0}' -f (Size $before)) | Write-Host
     foreach ($d in $s.Drop.GetEnumerator()) { Write-Host ('  {0,-21} {1}' -f $d.Key, (Size $d.Value)) }
     Write-Host ('Voice languages to drop: {0}   (keeping {1})' -f (Size $s.ForeignBytes), ($Keep -join ', '))
@@ -302,7 +302,7 @@ function Invoke-Slim($g, $dir) {
     if ($s.Unit -eq 0) { Write-Host 'Old patch copies stay: this drive cannot free part of a file. That needs NTFS and a few MB free.' }
     if ($s.Foreign.Count -eq 0 -and $s.Todo.Count -eq 0) { Write-Host 'Nothing to do.'; return }; if ($Scan) { return }
     if (-not $Yes -and (Read-Host 'Go ahead? (y/n)') -notmatch '^\s*y') { Write-Host 'Nothing changed.'; $script:rc = [Math]::Max($script:rc, 1); return }
-    $s.Apply(); $after = [Bl4Slim]::OnDisk($dir)
+    $s.Apply(); $after = [Slim]::OnDisk($dir)
     '', ('Before:  {0}' -f (Size $before)), ('After:   {0}' -f (Size $after)), ('Saved:   {0}' -f (Size ($before - $after))) | Write-Host
     if ($s.Todo.Count) { Write-Host 'In File Explorer, "Size" still counts the freed space. "Size on disk" is the real number.' }
 }
