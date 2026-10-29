@@ -9,18 +9,20 @@ public class Bl4Slim {
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern uint GetCompressedFileSizeW(string path, out uint high);
     const uint SetSparse = 0x900C4, SetZeroData = 0x980C8, QueryAllocatedRanges = 0x940CF;
     static readonly string[] Wwise = { "Chinese(Simplified)", "English(US)", "French(France)", "German", "Italian", "Japanese", "Korean", "Spanish(Spain)" };
-    static readonly Regex ChunkFile = new Regex(@"^pakchunk(\d+)-Windows_(\d+)_P\.(pak|ucas|utoc)$");
+    static readonly Regex ChunkFile = new Regex(@"^pakchunk(\d+)-Windows_(\d+)_P\.(pak|ucas|utoc)$"), ChunkFile3 = new Regex(@"^pakchunk(\d+)(?:optional)?-WindowsNoEditor(?:_(\d+)_P)?\.(pak)$");
     class Toc { public string[] Ids; public bool[] Header; public long[] SpanOff, SpanLen, BlockOff, BlockSize; public long BlockSz; }
-    class Pak { public string Mount; public Dictionary<string, long> Entries = new Dictionary<string, long>(); public long DataEnd; }
+    class Pak { public string Mount; public Dictionary<string, long> Entries = new Dictionary<string, long>(); public Dictionary<long, long> Ends; public long DataEnd; }
     public string Paks; public long Unit, Saves; public List<string> Foreign = new List<string>(), Skipped;
+    bool v3; byte[] key; Dictionary<string, int> chunkOf = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     public SortedDictionary<int, string> Voices = new SortedDictionary<int, string>();
     public SortedDictionary<string, long> Drop = new SortedDictionary<string, long>(); public long ForeignBytes { get { return Drop.Values.Sum(); } }
     public Dictionary<string, List<long[]>> Old = new Dictionary<string, List<long[]>>(StringComparer.OrdinalIgnoreCase), Todo = new Dictionary<string, List<long[]>>(StringComparer.OrdinalIgnoreCase);
     Dictionary<string, int> patch = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); Dictionary<int, List<string>> chunks;
-    public Bl4Slim(string paks) {
-        var found = Directory.GetFiles(Paks = paks).Select(f => new { f, m = ChunkFile.Match(Path.GetFileName(f)) }).Where(x => x.m.Success).ToList();
+    public Bl4Slim(string paks, string exe) {
+        if (v3 = !string.IsNullOrEmpty(exe)) key = FindKey(paks, exe);
+        var found = Directory.GetFiles(Paks = paks).Select(f => new { f, m = (v3 ? ChunkFile3 : ChunkFile).Match(Path.GetFileName(f)) }).Where(x => x.m.Success).ToList();
         Func<string, bool> ok = f => { try { if (f.EndsWith(".utoc")) ReadToc(f); else if (f.EndsWith(".pak")) ReadPak(f); return true; } catch (Exception e) { if (e is IOException || e is UnauthorizedAccessException) throw; return false; } }; var bad = new HashSet<string>(found.Where(x => !ok(x.f)).Select(x => x.f), StringComparer.OrdinalIgnoreCase); bad.UnionWith(bad.Where(f => f.EndsWith(".utoc")).Select(f => Path.ChangeExtension(f, ".ucas")).ToList()); Skipped = found.Where(x => bad.Contains(x.f)).Select(x => Path.GetFileName(x.f)).OrderBy(n => n).ToList(); found = found.Where(x => !bad.Contains(x.f)).ToList();
-        foreach (var x in found) patch[x.f] = int.Parse(x.m.Groups[2].Value);
+        foreach (var x in found) { patch[x.f] = x.m.Groups[2].Success ? int.Parse(x.m.Groups[2].Value) + (v3 ? 1 : 0) : 0; chunkOf[x.f] = int.Parse(x.m.Groups[1].Value); }
         chunks = found.GroupBy(x => int.Parse(x.m.Groups[1].Value)).ToDictionary(g => g.Key, g => g.Select(x => x.f).ToList());
         foreach (var kv in chunks) { var lang = ChunkLanguage(kv.Value); if (lang != null) Voices[kv.Key] = lang; }
     }
@@ -58,13 +60,15 @@ public class Bl4Slim {
         }
         return t;
     }
-    static string ChunkLanguage(List<string> files) {
+    string ChunkLanguage(List<string> files) {
         var langs = new HashSet<string>();
         foreach (var f in files)
             if (f.EndsWith(".pak")) {
-                var pak = ReadPak(f);
-                if (pak == null || pak.Entries.Count > 0 && !pak.Mount.TrimEnd('/').EndsWith("WwiseAudio")) return null;
-                langs.UnionWith(pak.Entries.Keys.Select(k => k.Trim('/').Split('/')).Select(p => p.Skip(p[0] == "Media" ? 1 : 0).ToArray()).Select(p => p.Length > 1 ? p[0] : null));
+                var pak = ReadPak(f); if (pak == null) return null;
+                var rel = pak.Entries.Keys.Select(k => k.Trim('/').Split('/'));
+                if (v3) rel = pak.Entries.Keys.Select(k => (pak.Mount + k).Trim('/').Split('/').SkipWhile(s => s != "WwiseAudio").Skip(1).ToArray());
+                else if (pak.Entries.Count > 0 && !pak.Mount.TrimEnd('/').EndsWith("WwiseAudio")) return null;
+                langs.UnionWith(rel.Select(p => p.Skip(p.Length > 0 && p[0] == "Media" ? 1 : 0).ToArray()).Select(p => p.Length > 1 ? p[0] : null));
             }
             else if (f.EndsWith(".utoc") && ReadToc(f).Header.Any(h => !h)) return null;
         return langs.Count == 1 && Wwise.Contains(langs.First()) ? langs.First() : null;
@@ -85,13 +89,13 @@ public class Bl4Slim {
         }
     }
     void PlanPak(HashSet<string> skip) {
-        var paks = new Dictionary<string, Pak>(); var newest = new Dictionary<string, int>();
+        var paks = new Dictionary<string, Pak>(); var newest = new Dictionary<string, int>(); var newestChunk = new Dictionary<string, int>();
         foreach (var x in patch.Keys.Where(f => f.EndsWith(".pak") && !skip.Contains(f)).Select(f => new { f, p = ReadPak(f) }).Where(x => x.p != null))
-            foreach (var e in (paks[x.f] = x.p).Entries.Keys) Bump(newest, x.p.Mount + e, patch[x.f]);
+            foreach (var e in (paks[x.f] = x.p).Entries.Keys) { var k = x.p.Mount + e; int v; if (!newest.TryGetValue(k, out v) || v < patch[x.f]) newestChunk[k] = chunkOf[x.f]; else if (v == patch[x.f] && newestChunk[k] != chunkOf[x.f]) newestChunk[k] = -1; Bump(newest, k, patch[x.f]); }
         foreach (var kv in paks) {
-            var p = kv.Value; var used = new HashSet<long>(p.Entries.Where(e => newest[p.Mount + e.Key] <= patch[kv.Key]).Select(e => e.Value));
+            var p = kv.Value; var used = new HashSet<long>(p.Entries.Where(e => newest[p.Mount + e.Key] <= patch[kv.Key] || v3 && newestChunk[p.Mount + e.Key] != chunkOf[kv.Key]).Select(e => e.Value));
             var starts = p.Entries.Values.Distinct().OrderBy(x => x).ToArray();
-            Check(kv.Key, starts.Where(s => !used.Contains(s)).Select(s => UpToNext(starts, s, p.DataEnd)), used.OrderBy(x => x).Select(s => new[] { s, s + 1 }));
+            Check(kv.Key, starts.Where(s => !used.Contains(s)).Select(s => UpToNext(starts, s, p.DataEnd)), used.OrderBy(x => x).Select(s => new[] { s, p.Ends == null ? s + 1 : p.Ends[s] }));
         }
     }
     void Check(string f, IEnumerable<long[]> raw, IEnumerable<long[]> used) {
@@ -127,7 +131,44 @@ public class Bl4Slim {
         if (d.Length - (b + nb * 12 + U32(d, 36) * (long)U32(d, 40) + U32(d, 48)) != n * 24) throw Bad(path, "TOC sections do not add up to the file size");
         return t;
     }
-    static Pak ReadPak(string path) {
+    static byte[] FindKey(string paks, string exe) {
+        var probe = Directory.GetFiles(paks, "*.pak").OrderByDescending(f => new FileInfo(f).Length).First(); var d = File.ReadAllBytes(exe);
+        for (int i = 0; i + 57 <= d.Length; i++) {
+            if (d[i] != 0xC7 || d[i + 1] != 1) continue;
+            bool ok = true; for (int j = 1; j < 8 && ok; j++) ok = d[i + 7 * j - 1] == 0xC7 && d[i + 7 * j] == 0x41 && d[i + 7 * j + 1] == 4 * j;
+            if (!ok) continue;
+            var k = new byte[32]; Buffer.BlockCopy(d, i + 2, k, 0, 4); for (int j = 1; j < 8; j++) Buffer.BlockCopy(d, i + 7 * j + 2, k, 4 * j, 4);
+            try { ReadPak3(probe, k, true); return k; } catch (Exception e) { if (!(e is InvalidDataException || e is CryptographicException)) throw; }
+        }
+        throw Bad(exe, "this version of the game does not store its key the way this tool expects, so no key opens " + Path.GetFileName(probe));
+    }
+    Dictionary<string, Pak> cache = new Dictionary<string, Pak>(StringComparer.OrdinalIgnoreCase);
+    Pak ReadPak(string path) {
+        Pak p; if (cache.TryGetValue(path, out p)) return p;
+        return cache[path] = v3 ? ReadPak3(path, key, false) : ReadPak11(path);
+    }
+    static Pak ReadPak3(string path, byte[] key, bool needKey) {
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            long size = fs.Length; if (size < 45) throw Bad(path, "too small to be a pak");
+            var ft = ReadAt(fs, size - 45, 45);
+            if (U32(ft, 1) != 0x5A6F12E1) throw Bad(path, "no pak footer");
+            if (BitConverter.ToInt32(ft, 5) != 6) throw Bad(path, "pak version " + BitConverter.ToInt32(ft, 5) + ", expected 6");
+            if (needKey && ft[0] == 0) throw Bad(path, "its index is not encrypted, so it cannot test a key");
+            long io = I64(ft, 9); var idx = ReadAt(fs, io, (int)I64(ft, 17));
+            if (ft[0] != 0) using (var aes = Aes.Create()) { aes.Mode = CipherMode.ECB; aes.Padding = PaddingMode.None; aes.Key = key; using (var dec = aes.CreateDecryptor()) idx = dec.TransformFinalBlock(idx, 0, idx.Length); }
+            using (var sha = SHA1.Create()) if (!sha.ComputeHash(idx).SequenceEqual(ft.Skip(25).Take(20))) throw Bad(path, "index does not match its fingerprint");
+            int p = 0; var pak = new Pak { Mount = FString(idx, ref p), DataEnd = io, Ends = new Dictionary<long, long>() };
+            for (int i = 0, n = Next(idx, ref p); i < n; i++) {
+                var name = FString(idx, ref p); long off = I64(idx, p), csize = I64(idx, p + 8), first = off + 53, len = csize; int method = BitConverter.ToInt32(idx, p + 24); p += 48;
+                if (method != 0) { int nb = Next(idx, ref p); if (nb <= 0) throw Bad(path, "a compressed entry has no blocks"); long a = I64(idx, p + (nb - 1) * 16); first = off + a; len = I64(idx, p + (nb - 1) * 16 + 8) - a; p += nb * 16; }
+                byte fl = idx[p]; p += 5; if ((fl & 2) != 0) continue; if ((fl & 1) != 0) len = (len + 15) / 16 * 16;
+                long end; pak.Entries[name] = off; pak.Ends[off] = pak.Ends.TryGetValue(off, out end) ? Math.Max(end, first + len) : first + len;
+            }
+            if (p > idx.Length || idx.Length - p >= 16) throw Bad(path, "index layout does not add up to its size");
+            return pak;
+        }
+    }
+    static Pak ReadPak11(string path) {
         using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
             long size = fs.Length; if (size < 221) throw Bad(path, "too small to be a pak");
             var ft = ReadAt(fs, size - 221, 221);
@@ -211,27 +252,39 @@ public class Bl4Slim {
 }
 '@
 function Size($n) { if ($n -ge 1GB -or $n -eq 0) { '{0,8:N2} GB' -f ($n / 1GB) } else { '{0,8:N2} MB' -f ($n / 1MB) } }
-function Find-Game {
+$Games = @(
+    @{ Name = 'Borderlands 4'; App = 1285190; Proc = 'Borderlands4'; Exe = $null },
+    @{ Name = 'Borderlands 3'; App = 397540; Proc = 'Borderlands3'; Exe = 'OakGame\Binaries\Win64\Borderlands3.exe' }
+)
+function Find-Game($app) {
     if (-not ($steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath)) { return }
     $libs = @($steam); $vdf = [IO.Path]::Combine($steam, 'steamapps\libraryfolders.vdf')
     if (Test-Path -LiteralPath $vdf) { $libs += Select-String -LiteralPath $vdf -Pattern '"path"\s+"(.+?)"' | ForEach-Object { $_.Matches[0].Groups[1].Value -replace '\\\\', '\' } }
     foreach ($lib in $libs) {
-        $acf = [IO.Path]::Combine($lib, 'steamapps\appmanifest_1285190.acf')
+        $acf = [IO.Path]::Combine($lib, "steamapps\appmanifest_$app.acf")
         $m = if (Test-Path -LiteralPath $acf) { Select-String -LiteralPath $acf -Pattern '"installdir"\s+"(.+?)"' | Select-Object -First 1 }
         if ($m) { return [IO.Path]::Combine($lib, 'steamapps\common\' + $m.Matches[0].Groups[1].Value) }
     }
 }
-try {
-    if (-not $GameDir -and -not ($GameDir = Find-Game)) { $GameDir = Read-Host 'Paste your Borderlands 4 folder' }
-    if (-not ($GameDir = $GameDir.Trim().Trim('"')) -or -not (Test-Path -LiteralPath ([IO.Path]::Combine($GameDir, 'OakGame\Content\Paks')))) { Write-Host "No Borderlands 4 found at $GameDir"; exit 2 }
-    $GameDir = (Resolve-Path -LiteralPath $GameDir).ProviderPath.TrimEnd('\'); Write-Host "Borderlands 4: $GameDir"
+function Show-Error($e) {
+    if ($e -is [UnauthorizedAccessException]) { Write-Host 'Windows blocked access to a game file. Right-click bl4-slim.cmd and pick "Run as administrator".' }
+    elseif ($e -is [IO.PathTooLongException] -or ($e -is [ComponentModel.Win32Exception] -and $e.NativeErrorCode -eq 206)) { Write-Host 'A game file path is longer than Windows allows (260 characters). Move the game library closer to the drive root, or turn on long paths in Windows.' }
+    else { Write-Host "Stopped: $($e.Message)" }
+}
+function Invoke-Slim($g, $dir) {
+    if (-not ($dir = "$dir".Trim().Trim('"')) -or -not (Test-Path -LiteralPath ([IO.Path]::Combine($dir, 'OakGame\Content\Paks')))) { Write-Host "No Borderlands found at $dir"; $script:rc = [Math]::Max($script:rc, 2); return }
+    $dir = (Resolve-Path -LiteralPath $dir).ProviderPath.TrimEnd('\'); $paks = Join-Path $dir 'OakGame\Content\Paks'
+    if (-not $g) { $g = $Games[$(if (@(Get-ChildItem -LiteralPath $paks -Filter 'pakchunk*-WindowsNoEditor*.pak' | Select-Object -First 1)) { 1 } else { 0 })] }
+    Write-Host "$($g.Name): $dir"
     if (-not $Scan) {
-        if (Get-Process Borderlands4 -ErrorAction SilentlyContinue) { Write-Host 'Borderlands 4 is running. Close it first.'; exit 1 }
-        $sa = [IO.Path]::GetDirectoryName($GameDir); if ($sa) { $sa = [IO.Path]::GetDirectoryName($sa) }
-        $acf = if ($sa) { Join-Path $sa 'appmanifest_1285190.acf' }
-        if ($acf -and (Test-Path -LiteralPath $acf) -and (Get-Content -LiteralPath $acf -Raw) -notmatch '"StateFlags"\s+"4"') { Write-Host 'Steam is updating or checking the game. Let it finish first.'; exit 1 }
+        if (Get-Process $g.Proc -ErrorAction SilentlyContinue) { Write-Host "$($g.Name) is running. Close it first."; $script:rc = [Math]::Max($script:rc, 1); return }
+        $sa = [IO.Path]::GetDirectoryName($dir); if ($sa) { $sa = [IO.Path]::GetDirectoryName($sa) }
+        $acf = if ($sa) { Join-Path $sa "appmanifest_$($g.App).acf" }
+        if ($acf -and (Test-Path -LiteralPath $acf) -and (Get-Content -LiteralPath $acf -Raw) -notmatch '"StateFlags"\s+"4"') { Write-Host 'Steam is updating or checking the game. Let it finish first.'; $script:rc = [Math]::Max($script:rc, 1); return }
     }
-    $s = New-Object Bl4Slim (Join-Path $GameDir 'OakGame\Content\Paks'); $langs = @($s.Voices.Values | Sort-Object -Unique)
+    $exe = if ($g.Exe) { Join-Path $dir $g.Exe }
+    if ($exe -and -not (Test-Path -LiteralPath $exe)) { Write-Host ('{0} needs {1} to read its key, and it is not there.' -f $g.Name, $g.Exe); $script:rc = [Math]::Max($script:rc, 2); return }
+    $s = New-Object Bl4Slim -ArgumentList $paks, $exe; $langs = @($s.Voices.Values | Sort-Object -Unique)
     $Keep = @($Keep -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if (-not $Keep -and $langs.Count -gt 1) {
         Write-Host 'Voice languages installed:'; 1..$langs.Count | ForEach-Object { Write-Host ('  {0}. {1}' -f $_, $langs[$_ - 1]) }
@@ -241,21 +294,27 @@ try {
     if (-not $Keep) { $Keep = @(if ($langs.Count -eq 1) { $langs[0] } else { 'English(US)' }) }
     $Keep = @($Keep | ForEach-Object { $k = $_; @($langs | Where-Object { $_ -eq $k }) + $k | Select-Object -First 1 } | Select-Object -Unique)
     if ($langs -contains 'English(US)' -and $Keep -notcontains 'English(US)') { $Keep = @('English(US)') + $Keep; Write-Host 'Keeping English(US) too. The game seems to need the English voice files even if you play in another language.' } elseif ($langs.Count -gt 0 -and $langs -notcontains 'English(US)') { Write-Host 'The English(US) voice files are missing and the game seems to need them. Run "Verify integrity of game files" in Steam, then run this again.'; $Keep = @($Keep | Where-Object { $langs -contains $_ }); if (-not $Keep) { $Keep = @($langs) } }
-    Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Bl4Slim]::OnDisk($GameDir); if ($s.Skipped.Count) { Write-Host ('Ignoring {0} file(s) this tool does not understand: {1}' -f $s.Skipped.Count, ($s.Skipped -join ', ')) }
+    Write-Host 'Reading the game files...'; $s.Prepare([string[]]$Keep); $before = [Bl4Slim]::OnDisk($dir); if ($s.Skipped.Count) { Write-Host ('Ignoring {0} file(s) this tool does not understand: {1}' -f $s.Skipped.Count, ($s.Skipped -join ', ')) }
     '', ('Game on disk now:        {0}' -f (Size $before)) | Write-Host
     foreach ($d in $s.Drop.GetEnumerator()) { Write-Host ('  {0,-21} {1}' -f $d.Key, (Size $d.Value)) }
     Write-Host ('Voice languages to drop: {0}   (keeping {1})' -f (Size $s.ForeignBytes), ($Keep -join ', '))
     Write-Host ('Old patch copies:        {0}   in {1} files' -f (Size $s.Saves), $s.Todo.Count)
     if ($s.Unit -eq 0) { Write-Host 'Old patch copies stay: this drive cannot free part of a file. That needs NTFS and a few MB free.' }
-    if ($s.Foreign.Count -eq 0 -and $s.Todo.Count -eq 0) { Write-Host 'Nothing to do.'; exit 0 }; if ($Scan) { exit 0 }
-    if (-not $Yes -and (Read-Host 'Go ahead? (y/n)') -notmatch '^\s*y') { Write-Host 'Nothing changed.'; exit 1 }
-    $s.Apply(); $after = [Bl4Slim]::OnDisk($GameDir)
+    if ($s.Foreign.Count -eq 0 -and $s.Todo.Count -eq 0) { Write-Host 'Nothing to do.'; return }; if ($Scan) { return }
+    if (-not $Yes -and (Read-Host 'Go ahead? (y/n)') -notmatch '^\s*y') { Write-Host 'Nothing changed.'; $script:rc = [Math]::Max($script:rc, 1); return }
+    $s.Apply(); $after = [Bl4Slim]::OnDisk($dir)
     '', ('Before:  {0}' -f (Size $before)), ('After:   {0}' -f (Size $after)), ('Saved:   {0}' -f (Size ($before - $after))) | Write-Host
     if ($s.Todo.Count) { Write-Host 'In File Explorer, "Size" still counts the freed space. "Size on disk" is the real number.' }
-} catch {
-    $e = $_.Exception.GetBaseException()
-    if ($e -is [UnauthorizedAccessException]) { Write-Host 'Windows blocked access to a game file. Right-click bl4-slim.cmd and pick "Run as administrator".' }
-    elseif ($e -is [IO.PathTooLongException] -or ($e -is [ComponentModel.Win32Exception] -and $e.NativeErrorCode -eq 206)) { Write-Host 'A game file path is longer than Windows allows (260 characters). Move the game library closer to the drive root, or turn on long paths in Windows.' }
-    else { Write-Host "Stopped: $($e.Message)" }
-    exit 1
 }
+$script:rc = 0
+try {
+    $todo = @()
+    if ($GameDir) { $todo += @{ G = $null; Dir = $GameDir } }
+    else { foreach ($g in $Games) { if ($d = Find-Game $g.App) { $todo += @{ G = $g; Dir = $d } } } }
+    if (-not $todo) { $todo += @{ G = $null; Dir = (Read-Host 'Paste your Borderlands 3 or 4 folder') } }
+    foreach ($t in $todo) {
+        try { Invoke-Slim $t.G $t.Dir } catch { Show-Error $_.Exception.GetBaseException(); $script:rc = [Math]::Max($script:rc, 1) }
+        if ($todo.Count -gt 1) { Write-Host '' }
+    }
+} catch { Show-Error $_.Exception.GetBaseException(); $script:rc = [Math]::Max($script:rc, 1) }
+exit $script:rc
